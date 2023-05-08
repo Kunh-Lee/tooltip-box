@@ -9,7 +9,8 @@ Get the file, add to load path, and
   (require 'tooltip-box)
 #+END_SRC
 
-If you want to customize the faces or variables below, you shall customize these before require this package.
+
+If you want to customize the faces or variables below, you should customize these before requiring this package.
 
 ** Face
 
@@ -18,4 +19,4 @@ If you want to customize the faces or variables below, you shall customize these
 
 ** Customization
 - =tooltip-box-padding= :: The default padding of tooltip box.
-- tooltip-box-border :: The default border of tooltip box.
+- =tooltip-box-border= :: The default border of tooltip box.
