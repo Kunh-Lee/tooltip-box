@@ -55,7 +55,7 @@ Do so after `tooltip-box-short-delay'."
   "Hide tooltips box automatically after this many seconds."
   :type 'number)
 
-(defcustom tooltip-box-padding 7
+(defcustom tooltip-box-padding 10
   "Tooltip box padding."
   :type 'number)
 
@@ -64,62 +64,22 @@ Do so after `tooltip-box-short-delay'."
   :type 'number)
 
 (defcustom tooltip-box-font
-  (font-spec :name "Sans Serif" :size 11.0)  ;; "Noto Sans-10"
+  (font-spec :name "Sans Serif" :size 10.0)  ;; "Noto Sans-10"
   "Tooltip box font."
   :type 'font-spec)
 
 (defcustom tooltip-box--frame-parameters
-  (list '(tooltip-box-title . t)
-        ;; (cons 'font (font-spec :name "Noto Sans" :size 20.0))
-        (cons 'font tooltip-box-font)
-        '(fullscreen . nil)
-        '(no-accept-focus . t)
-        '(no-focus-on-map . nil)
-        '(min-width . t)
-        '(min-height . t)
-        '(border-width . 0)
-        ;; (internal-border-width . 5)
-        ;; (child-frame-border-width . 2)
-        '(left-fringe . 0)
-        '(right-fringe . 0)
-        '(vertical-scroll-bars . nil)
-        '(horizontal-scroll-bars . nil)
-        '(menu-bar-lines . 0)
-        '(tool-bar-lines . 0)
-        '(tab-bar-lines . 0)
-        '(line-spacing . 0)
-        '(no-other-frame . t)
-        '(unsplittable . t)
-        '(undecorated . t)
-        '(visibility . nil)
-        '(cursor-type . nil)
-        '(minibuffer . nil)
-        '(no-special-glyphs . t)
-        '(skip-taskbar . t)
-        '(inhibit-double-buffering . nil)
-        '(frame-resize-pixelwise . t)
-        '(desktop-dont-save . t))
-  "Frame parameters used for tooltips box.
-
-Note that font and color parameters are ignored, and the attributes
-of the `tooltip-box' face are used instead."
-  :type '(repeat (cons :format "%v"
-		               (symbol :tag "Parameter")
-                       (sexp :tag "Value"))))
-
-(defcustom tooltip-box--frame-parameters
   '((tooltip-box-title . t)
-    (font . tooltip-box-font)
     (fullscreen . nil)
     (no-accept-focus . t)
     (no-focus-on-map . nil)
-    (min-width . t)
-    (min-height . t)
+    (width . 0)
+    (height . 0)
+    (min-width . 0)
+    (min-height . 0)
+    (max-height . 1000)
+    (max-width . 1000)
     (border-width . 0)
-    ;; (internal-border-width . 5)
-    ;; (child-frame-border-width . 2)
-    (left-fringe . 0)
-    (right-fringe . 0)
     (vertical-scroll-bars . nil)
     (horizontal-scroll-bars . nil)
     (menu-bar-lines . 0)
@@ -158,8 +118,8 @@ of the `tooltip-box' face are used instead."
     (display-line-numbers . nil)
     (left-fringe-width . nil)
     (right-fringe-width . nil)
-    (left-margin-width . 0)
-    (right-margin-width . 0)
+    (left-margin-width . nil)
+    (right-margin-width . nil)
     (fringes-outside-margins . 0)
     (fringe-indicator-alist . nil)
     (indicate-empty-lines . nil)
@@ -176,12 +136,6 @@ of the `tooltip-box' face are used instead."
   "Face for Tooltip Box."
   :group 'tooltip-box
   :group 'basic-faces)
-
-(defface tooltip-box-border
-  '((((background dark)) :background "white")
-	(((background light)) :background "black"))
-  "Face for Tooltip Box Border.")
-
 
 ;;; Variables that are not customizable.
 
@@ -201,8 +155,20 @@ rest are not called.")
 (defvar tooltip-box-hide-time nil
   "Time when the last tooltip box was hidden.")
 
-(defvar tooltip-box-scroll-p nil
-  "Whether tooltip box scroll down or not.")
+(defvar tooltip-box--scroll-pixel nil
+  "Whether tooltip box scroll pixel.")
+
+(defvar tooltip-box--frame nil
+  "The frame to show tooltip.")
+
+(defvar tooltip-box--frame-font-height nil
+  "The font height of tooltip box.")
+
+(defvar tooltip-box--frame-insert nil
+  "The num of line to insert of tooltip  box.")
+
+(defvar tooltip-box--temp-pixel nil
+  "The pixel gap of tooltip box.")
 
 
 ;;; Timeout for tooltip box display
@@ -232,106 +198,92 @@ rest are not called.")
 				                    tooltip-box-last-mouse-motion-event))
 (defun tooltip-box-hide-tip ()
   "Hide tooltip box."
-  ;; (interactive)
-  (dolist (frame (frame-list))
-    (when (frame-parameter frame 'tooltip-box-title)
-      (set-frame-parameter frame 'visibility nil))))
+  (interactive)
+  (when (and tooltip-box--frame (frame-live-p tooltip-box--frame))
+    (make-frame-invisible tooltip-box--frame)
+    (when tooltip-box--scroll-pixel
+      (setq tooltip-box--scroll-pixel nil)
+      (with-selected-frame tooltip-box--frame
+        (pixel-scroll-precision-scroll-up (+ tooltip-box-padding tooltip-box--temp-pixel))))))
+
+
+(defun tooltip-box--create-frame (buffer)
+  "Create and return a child frame with BUFFER."
+  (let* ((position (cdr (mouse-pixel-position)))
+		 (parent-frame (window-frame (selected-window)))
+         (frame-font-height 0))
+    (setq tooltip-box--frame
+	      (make-frame
+	       `(
+		     (foreground-color . ,(face-attribute 'tooltip :foreground))
+		     (background-color . ,(face-attribute 'tooltip :background))
+             ,(cons 'font tooltip-box-font)
+		     ;; (child-frame-border . ,(face-attribute 'tooltip-box :box))
+		     (parent-frame . ,parent-frame)
+             ;; (keep-ratio ,keep-ratio)
+             (min-height . 0)
+             ,(cons 'left-fringe tooltip-box-padding)
+             ,(cons 'right-fringe tooltip-box-padding)
+             (child-frame-border-width . ,tooltip-box-border)
+		     ,@tooltip-box--frame-parameters)))
+    (set-face-attribute 'fringe tooltip-box--frame :background 'unspecified :inherit 'tooltip-box)
+    (set-face-background 'child-frame-border (face-attribute 'tooltip :foreground) tooltip-box--frame)
+    (set-window-buffer (frame-root-window tooltip-box--frame) buffer)
+    (set-window-dedicated-p (frame-root-window tooltip-box--frame) t)
+    (with-selected-frame tooltip-box--frame
+      (setq frame-font-height (default-font-height))
+      (setq tooltip-box--frame-font-height (default-font-height))
+      (setq tooltip-box--frame-insert (ceiling (/ (* 2 tooltip-box-padding) (float frame-font-height))))
+      (setq tooltip-box--temp-pixel (-
+                                     (* tooltip-box--frame-insert frame-font-height)
+                                     tooltip-box-padding tooltip-box-padding)))))
 
 (defun tooltip-box--make-buffer ()
   "Create buffer with NAME."
   (let ((buffer (get-buffer-create " *tooltip-box*")))
     (with-current-buffer buffer
       ;;; XXX HACK install mouse ignore map
-      ;; (face-remap-add-relative 'default (face-attr-construct 'tooltip-box))
       (dolist (var tooltip-box--buffer-parameters)
-        (set (make-local-variable (car var)) (cdr var)))
-      ;; (buffer-face-set 'tooltip-box)
-      )
-    ;; (setq-local face-remapping-alist (copy-tree fr)
-    ;;             line-spacing ls)
-    ;; (cl-pushnew 'corfu-default (alist-get 'default face-remapping-alist))
-    ;; buffer
-    ))
-
-(defun tooltip-box--create-frame (buffer)
-  "Create and return a child frame with BUFFER."
-  ;; (tooltip-box--make-buffer " *tooltip-box*")
-  (let* (;; (buffer (get-buffer-create " *tooltip-box*"))
-		 (position (cdr (mouse-pixel-position)))
-		 (parent-frame (window-frame (selected-window))))
-	;; (with-current-buffer buffer
-	;;   (dolist (var tooltip-box--buffer-parameters)
-    ;;     (set (make-local-variable (car var)) (cdr var)))
-	;;   (buffer-face-set 'tooltip-box))
-    (setq-local box-frame
-				(make-frame
-				 `(
-				   (foreground-color . ,(face-attribute 'tooltip :foreground))
-				   (background-color . ,(face-attribute 'tooltip :background))
-				   ;; (child-frame-border . ,(face-attribute 'tooltip-box :box))
-				   (parent-frame . ,parent-frame)
-                   ;; (keep-ratio ,keep-ratio)
-                   (min-height . 0)
-                   (left-fringe . ,tooltip-box-padding)
-                   (right-fringe . ,tooltip-box-padding)
-                   (child-frame-border-width . ,tooltip-box-border)
-                   (left . ,(+ (car position) tooltip-x-offset))
-                   (top . ,(+ (cdr position) tooltip-y-offset))
-				   ,@tooltip-box--frame-parameters)))
-    ;; (set-frame-parameter box-frame 'font tooltip-box-font)
-    (set-face-attribute 'fringe box-frame :background 'unspecified :inherit 'tooltip-box)
-    (set-face-background 'child-frame-border (face-attribute 'tooltip :foreground) box-frame)
-    ;; (set-face-attribute 'default box-frame :font (face-attribute 'tooltip-box :font))
-    (set-window-buffer (frame-root-window box-frame) buffer)
-    (set-window-dedicated-p (frame-root-window box-frame) t)
-    box-frame))
+        (set (make-local-variable (car var)) (cdr var))))
+    (tooltip-box--create-frame buffer)))
 
 (defun tooltip-box-show (msg)
   "Create a tooltip box of MSG."
-  (let* ((buffer (get-buffer-create " *tooltip-box*"))
-         (frame-font-height 0)
-         (return-insert 0))
-    (dolist (frame (frame-list))
-      (if (frame-parameter frame 'tooltip-box-title)
-          (setq tooltip-box-frame frame)
-	    (progn
-          (setq tooltip-box-frame (tooltip-box--create-frame buffer)))))
-    (with-selected-frame tooltip-box-frame
-      (setq frame-font-height (default-font-height)))
-    (setq return-insert (ceiling (/ (* 2 tooltip-box-padding) (float frame-font-height))))
-	(with-current-buffer buffer
-	  ;; (buffer-face-set 'tooltip-box)
-      (with-silent-modifications
-		(erase-buffer)
-        (insert (format "%s%s" (make-string return-insert ?\n) msg))))
-    (let* ((size (window-text-pixel-size (frame-selected-window tooltip-box-frame)))
+  (let* ((buffer (get-buffer-create " *tooltip-box*")))
+    (with-current-buffer buffer
+	  (with-silent-modifications
+	    (erase-buffer)
+        (insert (format "%s%s" (make-string tooltip-box--frame-insert ?\n) msg))))
+    ;; To get the right window-text-pixel-size.
+    (set-frame-size tooltip-box--frame 1000 1000 t)
+    (let* ((window (frame-selected-window tooltip-box--frame))
+           (size (window-text-pixel-size window nil nil nil nil t))
            (left (cadr (mouse-pixel-position)))
            (top (cddr (mouse-pixel-position)))
-           (minus-pixel (- (* return-insert frame-font-height) tooltip-box-padding tooltip-box-padding))
-           ;; (minus-pixel (- frame-font-height tooltip-box-padding tooltip-box-padding))
-		   (width (car size))
-           (height (- (cdr size) minus-pixel))
+           (width (car size))
+           (height (cdr size))
            (frame-resize-pixelwise t))
-      (when (> (+ left width tooltip-box-padding
-                  tooltip-box-padding tooltip-box-border tooltip-box-border)
-               (frame-pixel-width))
-        (set-frame-parameter tooltip-box-frame
-                             'left (- left width tooltip-x-offset
-                                      tooltip-box-padding tooltip-box-padding)))
-      (when (> (+ top height tooltip-box-border tooltip-box-border tooltip-y-offset)
-               (frame-pixel-height))
-        (set-frame-parameter tooltip-box-frame
-                             'top (- top height tooltip-y-offset)))
-      (set-frame-size tooltip-box-frame width height t)
-      (set-frame-parameter tooltip-box-frame 'visibility t)
-      (with-selected-frame tooltip-box-frame
-        (pixel-scroll-precision-scroll-down (+ minus-pixel tooltip-box-padding)))
-      ;; (set-frame-parameter tooltip-box-frame ')
-      ;; (pixel-scroll-precision-scroll-down tooltip-box-padding)
-      ;; )
-      ;; (with-selected-window (frame-root-window tooltip-box-frame)
-      ;;   (pixel-scroll-precision-scroll-down 1))
-      )))
+      ;; (message (format "font-height:%s  width:%s  height:%s  size:%s  padding:%s  window:%s"
+      ;;                  tooltip-box--frame-font-height width height size tooltip-box-padding window))
+      (unless tooltip-box--scroll-pixel
+        (setq tooltip-box--scroll-pixel t
+              height (- height tooltip-box--temp-pixel))
+        (with-selected-frame tooltip-box--frame
+          (pixel-scroll-precision-scroll-down (+ tooltip-box--temp-pixel tooltip-box-padding))))
+      (if (> (+ left width tooltip-box-padding
+                tooltip-box-padding tooltip-box-border tooltip-box-border)
+             (frame-pixel-width))
+          (set-frame-parameter tooltip-box--frame
+                               'left (- left width tooltip-x-offset
+                                        tooltip-box-padding tooltip-box-padding))
+        (set-frame-parameter tooltip-box--frame 'left (+ left tooltip-x-offset)))
+      (if (> (+ top height tooltip-box-border tooltip-box-border tooltip-y-offset)
+             (frame-pixel-height))
+          (set-frame-parameter tooltip-box--frame
+                               'top (- top height tooltip-y-offset))
+        (set-frame-parameter tooltip-box--frame 'top (+ top tooltip-y-offset)))
+      (set-frame-size tooltip-box--frame width height t)
+      (make-frame-visible tooltip-box--frame))))
 
 (defun tooltip-box-hide (&optional _ignored-arg)
   "Hide a tooltip box, if one is displayed.
@@ -372,10 +324,7 @@ MSG is either a help string to display, or nil to cancel the display."
 	           ;; display a new one, with some delay.
 	           (tooltip-box-hide)
 	           (tooltip-box-start-delayed-tip)
-               )))
-    ;; On text-only displays, try `tooltip-show-help-non-mode'.
-    ;; (tooltip-show-help-non-mode msg)
-    ))
+               )))))
 
 (defun tooltip-box-help-tips (_event)
   "Hook function to display a help tooltip box.
@@ -387,8 +336,7 @@ Value is non-nil if this function handled the tip."
     t))
 
 (tooltip-box--make-buffer)
+(tooltip-box-mode)
+
 (provide 'tooltip-box)
 ;;; tooltip-box.el ends here
-
-(tooltip-box-mode)
-(type-of (make-string 10 ?\n))
