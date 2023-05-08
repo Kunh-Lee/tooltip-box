@@ -1,0 +1,21 @@
+#+title: Tooltip box
+
+This package displays Tooltip in a chlidframe.
+
+
+* Install
+Get the file, add to load path, and
+#+BEGIN_SRC emacs-lisp
+  (require 'tooltip-box)
+#+END_SRC
+
+If you want to customize the faces or variables below, you shall customize these before require this package.
+
+** Face
+
+- =tooltip-box= :: Default face used by childframe.
+- =tooltip-box-font= :: Default font used by childframe.
+
+** Customization
+- =tooltip-box-padding= :: The default padding of tooltip box.
+- tooltip-box-border :: The default border of tooltip box.
