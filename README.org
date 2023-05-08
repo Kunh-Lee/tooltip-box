@@ -9,6 +9,8 @@ Get the file, add to load path, and
   (require 'tooltip-box)
 #+END_SRC
 
+#+CAPTION: Tooltip Box
+[[./screenshot/tooltip-box.png]]
 
 If you want to customize the faces or variables below, you should customize these before requiring this package.
 
